@@ -328,7 +328,7 @@
         box-shadow: 0 5px 14px rgb(90 82 208 / 10%);
       }
 
-      .answer:focus-visible, .next-button:focus-visible, .restart-button:focus-visible {
+      .answer:focus-visible, .next-button:focus-visible, .review-button:focus-visible, .restart-button:focus-visible {
         outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent);
         outline-offset: 3px;
       }
@@ -418,6 +418,17 @@
         box-shadow: 0 6px 16px rgb(99 91 219 / 24%);
       }
 
+      .review-button {
+        min-height: 46px;
+        padding: 0 19px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface-soft);
+        color: var(--ink);
+        font-weight: 750;
+        cursor: pointer;
+      }
+
       .next-button:hover, .restart-button:hover {
         transform: translateY(-1px);
         background: var(--accent-dark);
@@ -426,6 +437,7 @@
       [hidden] { display: none !important; }
 
       .result { padding: 46px 34px 38px; text-align: center; }
+      .result-actions { display: flex; flex-direction: column; align-items: center; gap: 10px; }
 
       .result-emoji {
         display: grid;
@@ -445,6 +457,15 @@
       .result-copy { max-width: 370px; margin: 0 auto 23px; color: var(--muted); }
       .final-score { margin-bottom: 25px; font-size: 18px; font-weight: 750; }
       .final-score strong { color: var(--accent); font-size: 28px; font-variant-numeric: tabular-nums; }
+
+      .review { margin-top: 30px; border-top: 1px solid var(--line); padding-top: 24px; text-align: left; }
+      .review h2 { margin-bottom: 16px; font-size: 19px; }
+      .review-list { display: grid; gap: 12px; margin: 0; padding-left: 25px; }
+      .review-list li { padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); }
+      .review-list h3 { margin: 0 0 8px; font-size: 15px; line-height: 1.4; }
+      .review-answer, .review-status { margin: 4px 0 0; font-size: 13px; }
+      .review-answer.correct, .review-status.good { color: var(--green); font-weight: 700; }
+      .review-answer.incorrect, .review-status.bad { color: var(--red); font-weight: 700; }
 
       .sr-only {
         position: absolute;
@@ -542,7 +563,14 @@
         <h1 id="result-title" tabindex="-1">¡Buen viaje, explorador!</h1>
         <p class="result-copy" id="result-copy"></p>
         <p class="final-score"><strong id="final-score">0</strong><span> / 10 respuestas correctas</span></p>
-        <button class="restart-button" id="restart" type="button">Jugar de nuevo <span aria-hidden="true">↻</span></button>
+        <div class="result-actions">
+          <button class="review-button" id="review-toggle" type="button" aria-expanded="false" aria-controls="review">Revisar respuestas</button>
+          <button class="restart-button" id="restart" type="button">Jugar de nuevo <span aria-hidden="true">↻</span></button>
+        </div>
+        <section class="review" id="review" aria-labelledby="review-title" hidden>
+          <h2 id="review-title">Repaso de las 10 preguntas</h2>
+          <ol class="review-list" id="review-list"></ol>
+        </section>
       </section>
       <p class="sr-only" id="announcement" aria-live="polite"></p>
     </main>
@@ -642,9 +670,13 @@
       const progressEl = document.querySelector("#progress");
       const progressTrack = document.querySelector(".progress-track");
       const announcement = document.querySelector("#announcement");
+      const reviewToggle = document.querySelector("#review-toggle");
+      const review = document.querySelector("#review");
+      const reviewList = document.querySelector("#review-list");
       let current = 0;
       let score = 0;
       let answered = false;
+      const selectedAnswers = Array(questions.length).fill(null);
 
       function renderQuestion() {
         const item = questions[current];
@@ -678,6 +710,7 @@
         if (answered) return;
         answered = true;
         const item = questions[current];
+        selectedAnswers[current] = selected;
         const buttons = [...answersEl.children];
         buttons.forEach(button => { button.disabled = true; });
         const isCorrect = selected === item.correct;
@@ -703,9 +736,34 @@
         nextButton.hidden = false;
       }
 
+      function renderReview() {
+        reviewList.replaceChildren();
+        questions.forEach((item, index) => {
+          const isCorrect = selectedAnswers[index] === item.correct;
+          const entry = document.createElement("li");
+          const heading = document.createElement("h3");
+          const chosenAnswer = document.createElement("p");
+          const correctAnswer = document.createElement("p");
+          const status = document.createElement("p");
+
+          heading.textContent = item.question;
+          chosenAnswer.className = `review-answer ${isCorrect ? "correct" : "incorrect"}`;
+          chosenAnswer.textContent = `Tu respuesta: ${item.answers[selectedAnswers[index]]}`;
+          correctAnswer.textContent = `Respuesta correcta: ${item.answers[item.correct]}`;
+          status.className = `review-status ${isCorrect ? "good" : "bad"}`;
+          status.textContent = isCorrect ? "¡Acertaste!" : "No acertaste esta pregunta.";
+          entry.append(heading, chosenAnswer, correctAnswer, status);
+          reviewList.append(entry);
+        });
+      }
+
       function showResults() {
         quiz.hidden = true;
         result.hidden = false;
+        renderReview();
+        review.hidden = true;
+        reviewToggle.setAttribute("aria-expanded", "false");
+        reviewToggle.textContent = "Revisar respuestas";
         document.querySelector("#final-score").textContent = String(score);
         const emoji = score === 10 ? "🚀" : score >= 7 ? "🌟" : score >= 4 ? "🪐" : "🌱";
         const title = score === 10 ? "¡Una misión perfecta!" : score >= 7 ? "¡Exploración estelar!" : score >= 4 ? "¡Vas por buen camino!" : "¡Toda misión empieza así!";
@@ -723,6 +781,13 @@
         document.querySelector("#result-title").focus();
       }
 
+      reviewToggle.addEventListener("click", () => {
+        review.hidden = !review.hidden;
+        const isExpanded = !review.hidden;
+        reviewToggle.setAttribute("aria-expanded", String(isExpanded));
+        reviewToggle.textContent = isExpanded ? "Ocultar repaso" : "Revisar respuestas";
+      });
+
       nextButton.addEventListener("click", () => {
         if (current === questions.length - 1) {
           progressEl.style.width = "100%";
@@ -739,6 +804,7 @@
         current = 0;
         score = 0;
         scoreEl.textContent = "0";
+        selectedAnswers.fill(null);
         result.hidden = true;
         quiz.hidden = false;
         renderQuestion();
